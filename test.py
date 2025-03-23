@@ -5,6 +5,7 @@ import json
 
 
 class CrosswordGenerator:
+    
     def __init__(self):
         self.entries = []
         self.grid = {}
@@ -90,6 +91,7 @@ class CrosswordGenerator:
                 "上": (-1, 0)
             }
             dr, dc = dir_map[direction]
+            
 
             # 检查冲突
             path = []

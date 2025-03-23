@@ -218,8 +218,16 @@ class CrosswordSolver:
         return True, f"{output_dir}/progress_{mode}.png"
 
 
-# 使用示例
-if __name__ == "__main__":
+def print_help():
+    """打印帮助信息"""
+    print("欢迎使用填字游戏！")
+    print("可用命令：")
+    print("1. /help - 显示此帮助信息")
+    print("2. /选择题目 第X题 - 选择要作答的题目")
+    print("3. /作答 坐标 答案 - 提交答案（例如：/作答 B2 い;ぬ;ば;し;り;も;み;じ）")
+    print("4. /退出 - 退出游戏")
+
+def main():
     # 创建填字游戏
     generator = CrosswordGenerator()
     generator.add_problem(
@@ -232,8 +240,57 @@ if __name__ == "__main__":
     )
     generator.generate()
 
-    # 解答过程
+    # 初始化解答器
     solver = CrosswordSolver("crossword_data.json")
-    print(solver.submit("B2", "右", "い;ぬ;ば;し;り;も;み;じ"))  # 正确
-    print(solver.submit("B2", "右", "wrong"))  # 错误
-    solver.generate_progress_image()
+    current_problem = None
+
+    print("填字游戏已启动！输入 /help 查看帮助信息。")
+
+    while True:
+        user_input = input("请输入命令：").strip()
+        
+        if user_input == "/help":
+            print_help()
+            continue
+            
+        elif user_input == "/退出":
+            print("感谢使用，再见！")
+            break
+            
+        elif user_input.startswith("/选择题目"):
+            try:
+                problem_num = int(user_input.split()[1])
+                if 1 <= problem_num <= len(solver.data):
+                    current_problem = solver.data[problem_num - 1]
+                    print(f"已选择第{problem_num}题：")
+                    print(f"位置：{current_problem['position']}")
+                    print(f"方向：{current_problem['direction']}")
+                    print(f"汉字：{current_problem['kanji']}")
+                else:
+                    print("题目编号无效！")
+            except (IndexError, ValueError):
+                print("请输入正确的题目编号！")
+            continue
+            
+        elif user_input.startswith("/作答"):
+            if not current_problem:
+                print("请先使用 /选择题目 选择要作答的题目！")
+                continue
+                
+            try:
+                _, position, answer = user_input.split(maxsplit=2)
+                success, message = solver.submit(position, current_problem['direction'], answer)
+                print(message)
+                
+                if success:
+                    solver.generate_progress_image()
+                    print("已更新进度图片！")
+            except ValueError:
+                print("请输入正确的格式：/作答 坐标 答案")
+            continue
+            
+        else:
+            print("未知命令！输入 /help 查看帮助信息。")
+
+if __name__ == "__main__":
+    main()
