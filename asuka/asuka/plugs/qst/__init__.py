@@ -12,6 +12,9 @@ import os
 from pathlib import Path
 import sys
 
+PASSWORD = "ayanami"
+
+
 # 设置字体和渲染相关的常量
 FONTS_DIR = Path(__file__).parent / "fonts"
 FONT_PATHS = {
@@ -129,17 +132,28 @@ ROMAJI_MAP = {
 user_questions = {}
 
 # 题目布局数据结构
-# 格式：{题号: (网格大小, [(方向, 内部坐标, 长度, 题号显示, 答案列表), ...])}
-crossword_layouts: Dict[int, Tuple[Tuple[int, int], List[Tuple[str, str, int, str, List[str]]]]] = {
+# 格式：{题号: (网格大小, 是否支持假名, [(方向, 内部坐标, 长度, 题号显示, 答案列表), ...])}
+crossword_layouts: Dict[int, Tuple[Tuple[int, int], bool, List[Tuple[str, str, int, str, List[str]]]]] = {
     1: (
         (15, 15),  # 网格大小 (行数, 列数)
+        True,  # 支持假名转换
         [
             ("横", "A1", 5, "1", ["やくもらん", "yakumoran", "八云蓝"]),  # 横向用数字1,2,3...
-            ("竖", "B2", 3, "一", ["こめ", "kome", "古明"]),  # 竖向用一,二,三...
+            ("竖", "B2", 2, "一", ["こめ", "kome", "古明"]),  # 竖向用一,二,三...
+            ("横", "C3", 4, "2", ["おおきい", "ooki", "大木"]),  # 横向用数字1,2,3...
             # ... 添加更多单词
         ]
     ),
     # ... 其他题目
+    2: (
+        (15, 15),  # 网格大小 (行数, 列数)
+        False,  # 不支持假名转换
+        [
+            ("横", "C2", 5, "1", ["满月的竹林"]),  # 横向用数字1,2,3...
+            ("竖", "C3", 8, "一", ["月之妖鸟化猫之幻"]),  # 竖向用一,二,三...
+            ("横", "A6", 5, "2", ["东方林籁庵"]),  # 横向用数字1,2,3...
+        ]
+    )
 }
 
 
@@ -181,7 +195,7 @@ def validate_answer(grid_num: int, question_num: str, answer: str) -> Tuple[bool
     if grid_num not in crossword_layouts:
         return False, f"题目 {grid_num} 不存在", ""
     
-    _, layout = crossword_layouts[grid_num]
+    _, _, layout = crossword_layouts[grid_num]
     for direction, start_coord, length, q_num, answers in layout:
         if q_num == question_num:
             # 检查答案是否匹配（忽略大小写）
@@ -194,6 +208,9 @@ def validate_answer(grid_num: int, question_num: str, answer: str) -> Tuple[bool
 help_cmd = on_command("help", rule=to_me(), priority=10, block=True)
 select_cmd = on_command("选择题目", rule=to_me(), priority=10, block=True)
 answer_cmd = on_command("作答", rule=to_me(), priority=10, block=True)
+admin_cmd = on_command("admin", rule=to_me(), priority=10, block=True)
+convert_cmd = on_command("转换", rule=to_me(), priority=10, block=True)
+pass_cmd = on_command("pass", rule=to_me(), priority=10, block=True)
 
 @help_cmd.handle()
 async def handle_help():
@@ -202,7 +219,13 @@ async def handle_help():
 2. 使用 /作答 题号 答案 来提交答案
    - 横向题目用数字表示：1, 2, 3...
    - 竖向题目用中文数字表示：一, 二, 三...
-例如：/作答 1 やくもらん"""
+3. 使用 /转换 在假名和罗马音之间切换
+4. 使用 /admin 密码 题号 查看答案（管理员功能）
+5. 使用 /pass 放弃当前题目（每道题只能尝试一次）
+
+注意：
+- 在群聊中使用时，需要先@机器人
+- 每道题只能尝试一次，除非你已经完成了当前题目的所有答案"""
     await help_cmd.finish(help_text)
 
 @dataclass
@@ -225,7 +248,7 @@ def create_game_state(question_num: int) -> GameState:
     if question_num not in crossword_layouts:
         raise ValueError(f"题目 {question_num} 不存在")
     
-    grid_size, layout = crossword_layouts[question_num]
+    grid_size, _, layout = crossword_layouts[question_num]
     rows, cols = grid_size
     grid = [[GridCell() for _ in range(cols)] for _ in range(rows)]
     
@@ -324,7 +347,21 @@ def save_game_image(state: GameState, user_id: int) -> str:
 async def handle_select(event: MessageEvent):
     msg = event.get_plaintext().strip()
     try:
-        question_text = msg.split("第")[1].split("题")[0]
+        # 检查消息格式
+        if "第" not in msg or "题" not in msg:
+            await select_cmd.finish("格式错误，请使用：/选择题目 第X题（支持中文数字）")
+            return
+            
+        parts = msg.split("第")
+        if len(parts) != 2:
+            await select_cmd.finish("格式错误，请使用：/选择题目 第X题（支持中文数字）")
+            return
+            
+        question_text = parts[1].split("题")[0]
+        if not question_text:
+            await select_cmd.finish("格式错误，请使用：/选择题目 第X题（支持中文数字）")
+            return
+            
         try:
             question_num = int(question_text)
         except ValueError:
@@ -335,6 +372,21 @@ async def handle_select(event: MessageEvent):
             return
             
         user_id = event.user_id
+        
+        # 检查用户是否已经尝试过这道题
+        if user_id in user_attempted_questions and question_num in user_attempted_questions[user_id]:
+            # 检查是否所有题目都已答对
+            if user_id in user_states:
+                state = user_states[user_id]
+                _, _, layout = crossword_layouts[user_questions[user_id]]
+                all_solved = all(q_num in state.solved_questions for _, _, _, q_num, _ in layout)
+                if not all_solved:
+                    await select_cmd.finish(f"你已经尝试过第{question_num}题了，请先完成当前题目或使用 /pass 放弃当前题目")
+                    return
+            else:
+                await select_cmd.finish(f"你已经尝试过第{question_num}题了，请先完成当前题目或使用 /pass 放弃当前题目")
+                return
+        
         user_questions[user_id] = question_num
         user_states[user_id] = create_game_state(question_num)
         
@@ -342,10 +394,13 @@ async def handle_select(event: MessageEvent):
         image_path = save_game_image(user_states[user_id], user_id)
         await select_cmd.finish(Message([
             MessageSegment.text(f"已选择第{question_num}题\n请使用 /作答 题号 答案 来提交答案\n"),
-            MessageSegment.image(file=f"file:///{image_path}")
+            MessageSegment.image(file=f"file:///{image_path}"),
+            MessageSegment.text("请使用 /转换 在假名和罗马音之间切换\n使用 /pass 可以放弃当前题目")
         ]))
+    
     except Exception as e:
-        await select_cmd.finish(f"格式错误，请使用：/选择题目 第X题（支持中文数字）\n错误信息：{str(e)}")
+        pass
+        #await select_cmd.finish(f"发生错误：{str(e)}\n请使用：/选择题目 第X题（支持中文数字）")
 
 @answer_cmd.handle()
 async def handle_answer(event: MessageEvent):
@@ -384,7 +439,7 @@ async def handle_answer(event: MessageEvent):
 def update_game_state(state: GameState, grid_num: int, question_num: str, display_answer: str) -> None:
     """更新游戏状态，使用假名形式显示"""
     # 在布局中查找对应的题目
-    _, layout = crossword_layouts[grid_num]
+    _, _, layout = crossword_layouts[grid_num]
     
     for direction, start_coord, length, q_num, _ in layout:
         if q_num == question_num:
@@ -401,18 +456,15 @@ def update_game_state(state: GameState, grid_num: int, question_num: str, displa
             state.solved_questions.add(question_num)
             return
 
-# 在文件开头的常量定义部分添加
-ADMIN_PASSWORD = "your_password_here"  # 请更改为你的实际密码
 
-# 在命令定义部分添加
-admin_cmd = on_command("admin", rule=to_me(), priority=10, block=True)
+
 
 def render_admin_image(grid_num: int) -> Image.Image:
     """渲染包含所有答案的游戏状态图片"""
     if grid_num not in crossword_layouts:
         raise ValueError(f"题目 {grid_num} 不存在")
     
-    grid_size, layout = crossword_layouts[grid_num]
+    grid_size, _, layout = crossword_layouts[grid_num]
     rows, cols = grid_size
     
     # 创建一个临时的游戏状态
@@ -429,14 +481,22 @@ def render_admin_image(grid_num: int) -> Image.Image:
         # 设置起始格的题号
         state.grid[row][col].question_number = q_num
         
-        # 填入第一个答案（假名形式）
-        answer = answers[0]
+        # 先标记需要填写的格子
         for i in range(length):
             if direction == "横":
                 state.grid[row][col + i].is_filled = True
-                state.grid[row][col + i].content = answer[i]
             else:  # 竖
                 state.grid[row + i][col].is_filled = True
+        
+        # 填入第一个答案（假名形式）
+        answer = answers[0]
+        if len(answer) != length:
+            raise ValueError(f"答案长度不匹配：题目 {q_num} 需要 {length} 个字符，但答案有 {len(answer)} 个字符")
+            
+        for i in range(length):
+            if direction == "横":
+                state.grid[row][col + i].content = answer[i]
+            else:  # 竖
                 state.grid[row + i][col].content = answer[i]
     
     return render_game_image(state)
@@ -453,7 +513,7 @@ async def handle_admin(event: MessageEvent):
     _, password, grid_num_str = parts
     
     # 验证密码
-    if password != "123456":
+    if password != PASSWORD:
         await admin_cmd.finish("密码错误")
         return
     
@@ -486,11 +546,10 @@ async def handle_admin(event: MessageEvent):
             MessageSegment.text(f"第{grid_num}题的答案：\n"),
             MessageSegment.image(file=f"file:///{image_path}")
         ]))
-    except Exception as e:
+    except ValueError as e:
         await admin_cmd.finish(f"生成答案图片时出错：{str(e)}")
-
-# 在命令定义部分添加
-convert_cmd = on_command("转换", rule=to_me(), priority=10, block=True)
+    #except Exception as e:
+    #   await admin_cmd.finish(f"生成答案图片时出错：{str(e)}")
 
 def convert_to_romaji(text: str) -> str:
     """将假名转换为罗马音"""
@@ -507,6 +566,13 @@ async def handle_convert(event: MessageEvent):
         return
     
     state = user_states[user_id]
+    grid_num = user_questions[user_id]
+    _, is_japanese, _ = crossword_layouts[grid_num]
+    
+    # 检查是否支持假名转换
+    if not is_japanese:
+        await convert_cmd.finish("当前题目不支持假名转换功能")
+        return
     
     if not state.is_romaji:
         # 转换为罗马音
@@ -518,7 +584,7 @@ async def handle_convert(event: MessageEvent):
         message = "已将假名转换为罗马音："
     else:
         # 转换回假名
-        _, layout = crossword_layouts[user_questions[user_id]]
+        _, _, layout = crossword_layouts[grid_num]
         for direction, start_coord, length, q_num, answers in layout:
             if q_num in state.solved_questions:
                 row = ord(start_coord[0].upper()) - ord('A')
@@ -538,3 +604,27 @@ async def handle_convert(event: MessageEvent):
         MessageSegment.text(f"{message}\n"),
         MessageSegment.image(file=f"file:///{image_path}")
     ]))
+
+# 在全局变量部分添加
+user_attempted_questions: Dict[int, Set[int]] = {}  # 记录用户已尝试过的题目
+
+@pass_cmd.handle()
+async def handle_pass(event: MessageEvent):
+    user_id = event.user_id
+    if user_id not in user_questions:
+        await pass_cmd.finish("请先使用 /选择题目 第X题 选择要回答的题目")
+        return
+    
+    grid_num = user_questions[user_id]
+    
+    # 记录用户已尝试过这道题
+    if user_id not in user_attempted_questions:
+        user_attempted_questions[user_id] = set()
+    user_attempted_questions[user_id].add(grid_num)
+    
+    # 清除当前题目状态
+    del user_questions[user_id]
+    if user_id in user_states:
+        del user_states[user_id]
+    
+    await pass_cmd.finish(f"已放弃第{grid_num}题\n请使用 /选择题目 第X题 选择新的题目")
