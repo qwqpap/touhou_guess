@@ -96,6 +96,14 @@ class Database:
         cursor.execute("DELETE FROM user_states")
         self.conn.commit()
 
+    def clear_all_data(self):
+        """清除所有用户的答题记录"""
+        with self.conn:
+            self.conn.execute("DELETE FROM user_questions")
+            self.conn.execute("DELETE FROM user_states")
+            self.conn.execute("DELETE FROM user_attempted_questions")
+            self.conn.commit()
+
     def close(self):
         """关闭数据库连接"""
         self.conn.close() 

@@ -37,6 +37,12 @@ def create_game_state(question_num: int) -> GameState:
 
 def update_game_state(state: GameState, grid_num: int, question_num: str, display_answer: str) -> None:
     """更新游戏状态，根据当前显示模式使用假名或罗马音"""
+    # 处理第三题
+    if grid_num == 3:
+        # 第三题不需要更新网格，只需要添加到已解答集合
+        state.solved_questions.add(question_num)
+        return
+    
     # 在布局中查找对应的题目
     _, _, layout = crossword_layouts[grid_num]
     

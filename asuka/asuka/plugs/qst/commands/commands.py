@@ -23,25 +23,25 @@ PASSWORD = "ayanami"
 
 # 命令注册
 help_cmd = on_command("help", priority=10, block=True)
-select_cmd = on_command("选择题目", priority=10, block=True)
-answer_cmd = on_command("作答", priority=10, block=True)
-admin_cmd = on_command("admin", priority=10, block=True)
-convert_cmd = on_command("转换", priority=10, block=True)
-pass_cmd = on_command("pass", priority=10, block=True)
-submit_cmd = on_command("提交", priority=10, block=True)
-query_cmd = on_command("查询", priority=10, block=True)
-erase_cmd = on_command("擦除", priority=10, block=True)
+select_cmd = on_command("选择题目", priority=10, block=True, aliases={"x"})
+answer_cmd = on_command("作答", priority=10, block=True, aliases={"z"})
+admin_cmd = on_command("admin", priority=10, block=True, aliases={"ad"})
+convert_cmd = on_command("转换", priority=10, block=True, aliases={"sw"})
+pass_cmd = on_command("pass", priority=10, block=True, aliases={"p"})
+submit_cmd = on_command("提交", priority=10, block=True, aliases={"t"})
+query_cmd = on_command("查询", priority=10, block=True, aliases={"c"})
+erase_cmd = on_command("擦除", priority=10, block=True, aliases={"d"})
 
 @help_cmd.handle()
 async def handle_help():
     help_text = """填字游戏使用说明：
-1. 使用 /选择题目 第X题 来选择要回答的题目（支持中文数字，如：第一题）
-2. 使用 /作答 题号 答案 来提交答案
+1. 使用 /选择题目 或者/x 第X题 来选择要回答的题目（支持中文数字，如：第一题）
+2. 使用 /作答 或者/z 题号 答案 来提交答案
    - 横向题目用数字表示：1, 2, 3...
    - 竖向题目用中文数字表示：一, 二, 三...
-3. 使用 /转换 在假名和罗马音之间切换
-4. 使用 /admin 密码 题号 查看答案（管理员功能）
-5. 使用 /pass 放弃当前题目（每道题只能尝试一次）
+3. 使用 /转换 或者/sw 在假名和罗马音之间切换
+4. 使用 /admin 或者/ad 密码 题号 查看答案（管理员功能）
+5. 使用 /pass 或者/p 放弃当前题目（每道题只能尝试一次）
 
 注意：
 - 每道题只能尝试一次，除非你已经完成了当前题目的所有答案"""
@@ -53,7 +53,7 @@ async def handle_query(event: MessageEvent):
     
     # 检查消息格式
     if len(msg.split()) != 2:  # 命令 题号
-        return await query_cmd.send("格式错误，请使用：/查询 题号（支持中文数字）")
+        return await query_cmd.send("格式错误，请使用：/查询 或者/c 题号（支持中文数字）")
         
     _, question_num = msg.split()
     
@@ -61,7 +61,7 @@ async def handle_query(event: MessageEvent):
     user_id = event.user_id
     grid_num = db.get_user_question(user_id)
     if not grid_num:
-        return await query_cmd.send("请先使用 /选择题目 第X题 选择要回答的题目")
+        return await query_cmd.send("请先使用 /选择题目 或者/x 第X题 选择要回答的题目")
     
     if grid_num not in QUESTION_TEXTS:
         return await query_cmd.send("当前题目没有文本内容")
@@ -96,17 +96,17 @@ async def handle_select(event: MessageEvent):
     try:
         # 检查消息格式
         if "第" not in msg or "题" not in msg:
-            await select_cmd.finish("格式错误，请使用：/选择题目 第X题（支持中文数字）")
+            await select_cmd.finish("格式错误，请使用：/选择题目 或者/x 第X题（支持中文数字）")
             return
             
         parts = msg.split("第")
         if len(parts) != 2:
-            await select_cmd.finish("格式错误，请使用：/选择题目 第X题（支持中文数字）")
+            await select_cmd.finish("格式错误，请使用：/选择题目 或者/x 第X题（支持中文数字）")
             return
             
         question_text = parts[1].split("题")[0]
         if not question_text:
-            await select_cmd.finish("格式错误，请使用：/选择题目 第X题（支持中文数字）")
+            await select_cmd.finish("格式错误，请使用：/选择题目 或者/x 第X题（支持中文数字）")
             return
             
         try:
@@ -133,14 +133,19 @@ async def handle_select(event: MessageEvent):
                 if state:
                     grid_data, solved_questions, _ = state
                     solved_questions = set(json.loads(solved_questions))
-                    _, _, layout = crossword_layouts[db.get_user_question(user_id)]
+                    _, _, layout = crossword_layouts[question_num]
                     all_solved = all(q_num in solved_questions for _, _, _, q_num, _ in layout)
-                    if not all_solved:
-                        await select_cmd.finish(f"你已经尝试过第{question_num}题了，请先完成当前题目或使用 /pass 放弃当前题目")
+                    if all_solved:
+                        await select_cmd.finish(f"你已经完成第{question_num}题了，请选择其他题目")
                         return
-                else:
-                    await select_cmd.finish(f"你已经尝试过第{question_num}题了，请先完成当前题目或使用 /pass 放弃当前题目")
-                    return
+                    else:
+                        # 检查用户当前是否有正在进行的题目
+                        current_question = db.get_user_question(user_id)
+                        if current_question and current_question != question_num:
+                            await select_cmd.finish(f"你已经尝试过第{question_num}题了，请先完成当前题目或使用 /pass 放弃当前题目")
+                            return
+                        # 如果用户当前没有正在进行的题目，允许重新选择
+                        pass
         
         db.set_user_question(user_id, question_num)
         
@@ -148,7 +153,7 @@ async def handle_select(event: MessageEvent):
         if question_num == 3:
             question_text = """若一部新作整数作stg（不含花映塚、兽王园）的某面boss在某部新作（含小数点作、花映塚、兽王园）中担任自机，则称该角色为这一面的自机角色。那么，各面自机角色各有几个？
 
-请用逗号分隔的7个数字回答，每个数字代表对应面的自机角色数量。"""
+请用逗号分隔的7个数字回答，每个数字代表对应面的自机角色数量。注：只有关底Boss算该面Boss，多个关底Boss则分开计算。以旧作为例，雪、舞都是怪绮谈四面Boss，所以她们是分开计算的"""
             await select_cmd.finish(Message([
                 MessageSegment.text(f"已选择第{question_num}题\n{question_text}\n\n请使用 /作答 1 答案 来提交答案\n答案必须是7个数字，用逗号分隔（支持中文和英文逗号）\n只能提交一次")
             ]))
@@ -164,29 +169,29 @@ async def handle_select(event: MessageEvent):
             )
             image_path = save_game_image(game_state, user_id)
             if question_num == 2:
+                await select_cmd.send(f"已选择第{question_num}题\n请使用 /作答 或者/z 题号 答案 来提交答案\n使用 /擦除 题号 可以擦除已填写的答案\n使用 /转换 或者/sw 在假名和罗马音之间切换\n使用 /pass 或者/p 可以放弃当前题目\n使用 /查询 或者/c 题号 可以查询题目内容\n")
                 await select_cmd.finish(Message([
-                    MessageSegment.text(f"已选择第{question_num}题\n请使用 /作答 题号 答案 来提交答案\n使用 /擦除 题号 可以擦除已填写的答案\n使用 /转换 在假名和罗马音之间切换\n使用 /pass 可以放弃当前题目\n"),
                     MessageSegment.image(f"file:///{image_path}")
                 ]))
                 return
             else:
+                await select_cmd.send(f"已选择第{question_num}题\n请使用 /作答 或者/z 题号 答案 来提交答案\n使用 /擦除 或者/d 题号 可以擦除已填写的答案\n使用 /转换 或者/sw 在假名和罗马音之间切换\n使用 /pass 或者/p 可以放弃当前题目\n使用 /查询 或者/c 题号 可以查询题目内容\n")
                 await select_cmd.finish(Message([
-                    MessageSegment.text(f"已选择第{question_num}题\n请使用 /作答 题号 答案 来提交答案\n"),
                     MessageSegment.image(f"file:///{image_path}"),
-                    MessageSegment.text("\n请使用 /转换 在假名和罗马音之间切换\n使用 /pass 可以放弃当前题目")
+                    MessageSegment.text("\n请使用 /转换 或者/sw 在假名和罗马音之间切换\n使用 /pass 或者/p 可以放弃当前题目")
                 ]))
                 return
     
     except Exception as e:
         if "FinishedException" not in str(e):
-            await select_cmd.finish(f"发生错误：{str(e)}\n请使用：/选择题目 第X题（支持中文数字）")
+            await select_cmd.finish("发生错误，请稍后重试")
 
 @answer_cmd.handle()
 async def handle_answer(event: MessageEvent):
     user_id = event.user_id
     grid_num = db.get_user_question(user_id)
     if not grid_num:
-        await answer_cmd.finish("请先使用 /选择题目 第X题 选择要回答的题目")
+        await answer_cmd.finish("请先使用 /选择题目 或者/x 第X题 选择要回答的题目")
         return
     
     # 处理第三题
@@ -215,7 +220,7 @@ async def handle_answer(event: MessageEvent):
     msg = event.get_plaintext().strip()
     parts = msg.split()
     if len(parts) != 3:  # 命令 题号 答案
-        await answer_cmd.finish("格式错误，请使用：/作答 题号 答案")
+        await answer_cmd.finish("格式错误，请使用：/作答 或者/z 题号 答案")
         return
         
     _, question_num, answer = parts
@@ -257,12 +262,16 @@ async def handle_answer(event: MessageEvent):
             all_solved = all(q_num in game_state.solved_questions for _, _, _, q_num, _ in layout)
             
             if all_solved:
-                # 如果是第二题，等待用户提交
+                # 如果是第二题，发送答案图片
                 if grid_num == 2:
-                    image_path = save_game_image(game_state, user_id)
+                    answer_path = str(PIC_DIR / f"answer{grid_num}.png")
+                    # 清除当前题目状态
+                    db.set_user_question(user_id, 0)
+                    db.set_user_state(user_id, "[]", "[]", False)
                     await answer_cmd.finish(Message([
-                        MessageSegment.text(f"{feedback}\n所有题目已填写完成，请使用 /提交 提交答案\n当前游戏状态：\n"),
-                        MessageSegment.image(f"file:///{image_path}")
+                        MessageSegment.text("恭喜你完成所有题目！\n"),
+                        MessageSegment.image(f"file:///{answer_path}"),
+                        MessageSegment.text("\n请使用 /选择题目 第X题 选择新的题目")
                     ]))
                 else:
                     # 其他题目显示答案图片
@@ -271,7 +280,7 @@ async def handle_answer(event: MessageEvent):
                     db.set_user_question(user_id, 0)
                     db.set_user_state(user_id, "[]", "[]", False)
                     await answer_cmd.finish(Message([
-                        MessageSegment.text(feedback),
+                        MessageSegment.text(f"{feedback}\n所有题目已填写完成，请使用 /提交 提交答案\n当前游戏状态：\n"),
                         MessageSegment.image(f"file:///{answer_path}"),
                         MessageSegment.text("\n请使用 /选择题目 第X题 选择新的题目")
                     ]))
@@ -293,7 +302,7 @@ async def handle_admin(event: MessageEvent):
     parts = msg.split()
     
     if len(parts) < 2:
-        await admin_cmd.finish("格式错误，请使用：/admin 密码 [题号]")
+        await admin_cmd.finish("格式错误，请使用：/admin 密码 [命令] [参数]\n可用命令：\n- clear: 清除所有用户的答题记录\n- answer 题号: 查看指定题目的答案")
         return
     
     password = parts[1]
@@ -302,32 +311,50 @@ async def handle_admin(event: MessageEvent):
         return
     
     if len(parts) == 2:
-        # 显示所有答案
-        await admin_cmd.finish("请指定题号，例如：/admin 密码 1")
+        # 显示帮助信息
+        await admin_cmd.finish("格式错误，请使用：/admin 密码 [命令] [参数]\n可用命令：\n- clear: 清除所有用户的答题记录\n- answer 题号: 查看指定题目的答案")
         return
     
-    try:
-        question_num = int(parts[2])
-    except ValueError:
-        await admin_cmd.finish("题号必须是数字")
+    command = parts[2]
+    if command == "clear":
+        # 清除所有用户的答题记录
+        db.clear_all_data()
+        await admin_cmd.finish("已清除所有用户的答题记录")
         return
-    
-    if question_num not in crossword_layouts:
-        await admin_cmd.finish(f"题目 {question_num} 不存在")
-        return
-    
-    # 生成答案图片
-    image_path = render_admin_image(question_num)
-    await admin_cmd.finish(Message([
-        MessageSegment.text(f"第{question_num}题答案：\n"),
-        MessageSegment.image(f"file:///{image_path}")
-    ]))
+    elif command == "answer":
+        if len(parts) != 4:
+            await admin_cmd.finish("格式错误，请使用：/admin 密码 answer 题号")
+            return
+        
+        try:
+            question_num = int(parts[3])
+        except ValueError:
+            await admin_cmd.finish("题号必须是数字")
+            return
+        
+        if question_num not in crossword_layouts:
+            await admin_cmd.finish(f"题目 {question_num} 不存在")
+            return
+        
+        # 生成答案图片
+        image_path = render_admin_image(question_num)
+        await admin_cmd.finish(Message([
+            MessageSegment.text(f"第{question_num}题答案：\n"),
+            MessageSegment.image(f"file:///{image_path}")
+        ]))
+    else:
+        await admin_cmd.finish(f"未知命令：{command}\n可用命令：\n- clear: 清除所有用户的答题记录\n- answer 题号: 查看指定题目的答案")
 
 @convert_cmd.handle()
 async def handle_convert(event: MessageEvent):
     user_id = event.user_id
     state = db.get_user_state(user_id)
     if not state:
+        await convert_cmd.finish("请先选择题目")
+        return
+    
+    grid_num = db.get_user_question(user_id)
+    if not grid_num or grid_num not in crossword_layouts:
         await convert_cmd.finish("请先选择题目")
         return
     
@@ -343,7 +370,6 @@ async def handle_convert(event: MessageEvent):
     )
     
     # 获取当前题目信息
-    grid_num = db.get_user_question(user_id)
     _, is_japanese, _ = crossword_layouts[grid_num]
     
     # 检查是否支持假名转换
@@ -426,7 +452,19 @@ async def handle_submit(event: MessageEvent):
     all_solved = all(q_num in solved_questions for _, _, _, q_num, _ in layout)
     
     if all_solved:
-        await submit_cmd.finish("恭喜你完成所有题目！")
+        # 如果是第二题，发送答案图片
+        if grid_num == 2:
+            answer_path = str(PIC_DIR / f"answer{grid_num}.png")
+            # 清除当前题目状态
+            db.set_user_question(user_id, 0)
+            db.set_user_state(user_id, "[]", "[]", False)
+            await submit_cmd.finish(Message([
+                MessageSegment.text("恭喜你完成所有题目！\n"),
+                MessageSegment.image(f"file:///{answer_path}"),
+                MessageSegment.text("\n请使用 /选择题目 第X题 选择新的题目")
+            ]))
+        else:
+            await submit_cmd.finish("恭喜你完成所有题目！")
     else:
         await submit_cmd.finish("还有题目未完成，请继续努力！")
 

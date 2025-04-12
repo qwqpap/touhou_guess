@@ -44,4 +44,4 @@ async def shutdown():
     db.close()
 
 # 导入命令模块以注册命令
-from .commands import commands
+from .commands import commands 
