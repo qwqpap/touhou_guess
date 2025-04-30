@@ -19,7 +19,7 @@ import json
 from .. import db
 
 PIC_DIR = Path(__file__).parent.parent / "pic"
-PASSWORD = "ayanami"
+PASSWORD = "saitama2000"
 
 # 命令注册
 help_cmd = on_command("help", priority=10, block=True)
@@ -175,7 +175,7 @@ async def handle_select(event: MessageEvent):
                 ]))
                 return
             else:
-                await select_cmd.send(f"已选择第{question_num}题\n请使用 /作答 或者/z 题号 答案 来提交答案\n使用 /擦除 或者/d 题号 可以擦除已填写的答案\n使用 /转换 或者/sw 在假名和罗马音之间切换\n使用 /pass 或者/p 可以放弃当前题目\n使用 /查询 或者/c 题号 可以查询题目内容\n")
+                await select_cmd.send(f"已选择第{question_num}题\n请使用 /作答 或者/z 题号 答案 来提交答案\n使用 /擦除 或者/d 题号 可以擦除已填写的答案\n使用 /转换 或者/sw 在假名和罗马音之间切换\n使用 /pass 或者/p 可以放弃当前题目\n使用 /查询 或者/c 题号 可以查询题目内容，翻译以thbwiki为准\n")
                 await select_cmd.finish(Message([
                     MessageSegment.image(f"file:///{image_path}"),
                     MessageSegment.text("\n请使用 /转换 或者/sw 在假名和罗马音之间切换\n使用 /pass 或者/p 可以放弃当前题目")
